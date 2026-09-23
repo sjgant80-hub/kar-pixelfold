@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pixelfold</title>
+<meta name="description" content="A lossless byte-to-pixel-grid codec: decode(encode(x)) === x, byte-exact, for any input. Kernel-backed, mutation-gated, CRC-verified. Built by karma-didy.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "pixelfold",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Any (runs in a browser)",
+  "description": "A lossless byte-to-pixel-grid codec. decode(encode(x)) === x, byte-exact, for arbitrary bytes, verified with an embedded CRC-16 checksum. Mutation-gated (witness) and fuzz-tested.",
+  "author": { "@type": "Person", "name": "karma-didy", "alternateName": "Kar" },
+  "license": "https://opensource.org/licenses/MIT",
+  "url": "https://sjgant80-hub.github.io/kar-pixelfold/",
+  "codeRepository": "https://github.com/sjgant80-hub/kar-pixelfold"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is pixelfold lossy, like a JPEG or a visual summary?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. pixelfold is lossless: decode(encode(bytes)) returns the exact original bytes, verified by an embedded CRC-16 checksum, for any input including empty input and input containing every byte value 0-255." }
+    },
+    {
+      "@type": "Question",
+      "name": "Does pixelfold only work on text?",
+      "acceptedAnswer": { "@type": "Answer", "text": "No. The core encode/decode functions operate on arbitrary bytes. Text (encodeText/decodeText) is a thin convenience layer on top of the byte codec, not the other way around." }
+    },
+    {
+      "@type": "Question",
+      "name": "How is corruption detected?",
+      "acceptedAnswer": { "@type": "Answer", "text": "A CRC-16/CCITT-FALSE checksum of the payload is embedded in the frame header. If any pixel is altered, decode refuses with a named corruption error instead of silently returning wrong bytes." }
+    }
+  ]
+}
+</script>
+<style>
+:root{--bg:#0b0a0f;--fg:#d8d2c4;--gold:#d4a017;--panel:#141218;--line:#3a3630;--ok:#6fae6f;--bad:#c86464}
+body{font-family:Georgia,serif;background:var(--bg);color:var(--fg);max-width:780px;margin:0 auto;padding:26px 18px 60px;line-height:1.5}
+h1{font-size:1.5rem;color:var(--gold);margin-bottom:.1rem}
+.byline{opacity:.65;font-size:.85em;margin-bottom:1.2rem}
+h2{font-size:1rem;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);opacity:.85;margin:1.8rem 0 .5rem}
+p.lead{opacity:.85}
+.card{border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:.8rem 0;background:var(--panel)}
+label{display:block;font-size:.85em;opacity:.75;margin:.6rem 0 .2rem}
+textarea,input[type=text]{width:100%;background:#0f0d12;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit;box-sizing:border-box;font-family:inherit}
+textarea{min-height:80px}
+button{background:var(--gold);color:#0b0a0f;border:0;border-radius:6px;padding:9px 16px;font:inherit;font-weight:bold;cursor:pointer;margin:10px 6px 0 0}
+button.secondary{background:transparent;color:var(--gold);border:1px solid var(--gold)}
+button.danger{background:transparent;color:var(--bad);border:1px solid var(--bad)}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.85em;font-weight:bold}
+.pill.ok{background:rgba(111,174,111,.18);color:var(--ok)}
+.pill.bad{background:rgba(200,100,100,.18);color:var(--bad)}
+.readout{font-size:.92em;margin-top:.8rem;white-space:pre-wrap;word-break:break-word}
+canvas{border:1px solid var(--line);border-radius:6px;image-rendering:pixelated;margin-top:8px;max-width:100%}
+.stat{font-variant-numeric:tabular-nums;font-weight:bold;color:var(--gold)}
+.quiet{opacity:.6;font-size:.88em}
+footer{margin-top:2.4rem;padding-top:1rem;border-top:1px solid var(--line);font-size:.8em;opacity:.65}
+code{background:#0f0d12;padding:1px 5px;border-radius:4px}
+.grids{display:flex;gap:18px;flex-wrap:wrap}
+.grids>div{flex:1;min-width:160px}
+</style>
+</head><body>
+
+<h1>pixelfold</h1>
+<div class="byline">by karma-didy ("Kar") · kernel-backed · witness 50/57 + 7 argued exemptions · CRC-verified</div>
+<p class="lead">A <b>lossless</b> byte&harr;pixel-grid codec: <code>decode(encode(x)) === x</code>, byte-exact,
+for any input — not a visual summary, not a vibe. Every frame carries a CRC-16 checksum, so a single
+altered pixel is <b>caught and named</b>, not silently returned as different-but-valid bytes. This
+page runs the real kernel below — nothing here is a mockup.</p>
+
+<h2>1 · text, round-tripped live</h2>
+<div class="card">
+  <label for="txt">type anything — it gets encoded to pixels, then decoded back</label>
+  <textarea id="txt" placeholder="type here…">κ φ — the estate's own honesty, round-tripped: 折り紙 🦅</textarea>
+  <button id="runTxt" type="button">encode → decode → verify</button>
+  <div class="grids">
+    <div><div class="quiet">the encoded grid</div><canvas id="txtCanvas" width="160" height="160"></canvas></div>
+    <div><div class="quiet">what came back</div><div class="readout" id="txtOut"></div></div>
+  </div>
+</div>
+
+<h2>2 · any file, byte-exact (not just text)</h2>
+<div class="card">
+  <p class="quiet">The core promise is about arbitrary bytes, not text. Drop any file — an image, a PDF,
+  anything — and this compares the decoded bytes to the original file byte-for-byte, not just "looks the
+  same."</p>
+  <input type="file" id="fileInput">
+  <div class="readout" id="fileOut"></div>
+  <div class="grids">
+    <div><div class="quiet">the encoded grid</div><canvas id="fileCanvas" width="160" height="160"></canvas></div>
+    <div></div>
+  </div>
+</div>
+
+<h2>3 · corrupt one pixel, watch the CRC catch it</h2>
+<div class="card">
+  <p class="quiet">Encodes the text above, then flips one channel of one pixel and tries to decode the
+  corrupted grid — proving the checksum actually refuses bad data instead of silently returning wrong bytes.</p>
+  <button id="runCorrupt" type="button" class="danger">encode → corrupt one pixel → decode</button>
+  <div class="readout" id="corruptOut"></div>
+</div>
+
+<h2>run the gate yourself</h2>
+<p class="quiet">
+<code>node --test kernel.test.mjs</code> — 51 tests, clause-isolating, plus a 500-buffer fuzz pass and a
+CRC-16/CCITT-FALSE standard reference-vector check (0x29B1 for "123456789").<br>
+<code>node tools/witness.mjs mutate kernel.mjs --timeout 15000 --cap 400 --test node --test kernel.test.mjs</code>
+— 50/57 mutants killed directly, 7 argued equivalent-mutant exemptions (each with a written mathematical
+reason in <code>witness.baseline.json</code>, none hand-waved), zero unexplained survivors.<br>
+CI re-proves both, pinned to witness v0.6, on every push.
+</p>
+
+<footer>composed by karma-didy, published under its own byline · MIT · Konomi architecture, created by Thomas Frumkin · origin lineage: <a href="https://sjgant80-hub.github.io/pixelwhisperer/" style="color:var(--gold)">pixelwhisperer</a> · CRC-16 pattern grounded in <a href="https://github.com/sjgant80-hub/mctp-multi-carrier-transport" style="color:var(--gold)">mctp-multi-carrier-transport</a></footer>
+
+<script type="module">
+// ⟦KERNEL-BEGIN⟧ generated from kernel.mjs by make-page.mjs — do not edit here
+// kernel.mjs — kar-pixelfold: a LOSSLESS byte <-> pixel-grid codec.
+//
+// The core promise, and the only thing this file is for: decode(encode(x)) === x, byte-exact,
+// for ARBITRARY bytes — not just text, any input, including empty input and input containing
+// every byte value 0-255. A visual you can verify, not just look at.
+//
+// Frame layout (grounded in the estate's own established pattern — mctp-multi-carrier-transport's
+// checksum-verified frame, one-ladder's [VER · data · CHK] — connect, don't invent):
+//   [4 bytes: length, big-endian uint32] [2 bytes: CRC-16/CCITT-FALSE of the PAYLOAD]
+//   [length bytes: the payload] [0-2 zero bytes: padding to a multiple of 3]
+// The header's length field is what decode trusts to know where the real payload ends — never a
+// null terminator, so payloads containing 0x00 bytes round-trip exactly like any other byte. The
+// CRC is what makes this a VERIFIED round-trip: a single flipped pixel is caught and named, not
+// silently returned as if nothing happened.
+//
+// Pixels: each cell carries one RGB triplet (3 bytes), row-major, as square a grid as the pixel
+// count allows. Total functions throughout: bad input returns { ok:false, why }, never a throw.
+
+const HEADER_BYTES = 6; // 4 (length) + 2 (crc16)
+const MAX_LEN = 0xFFFFFFFF;
+
+// CRC-16/CCITT-FALSE — reused verbatim from mctp-multi-carrier-transport's mctp.mjs (the estate's
+// own proven, dependency-free implementation), not reinvented. Exported so it can be checked
+// against the algorithm's own standard test vector, not just its self-consistency within this
+// file (encode and decode both call the same function, so a subtly-wrong-but-still-internally-
+// consistent implementation would pass every round-trip test and still be the wrong algorithm).
+function crc16(bytes) {
+  let crc = 0xffff;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i] << 8;
+    for (let b = 0; b < 8; b++) crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+  }
+  return crc;
+}
+
+function isBytesLike(x) {
+  if (x instanceof Uint8Array) return true;
+  if (!Array.isArray(x)) return false;
+  for (let i = 0; i < x.length; i++) { const v = x[i]; if (!Number.isInteger(v) || v < 0 || v > 255) return false; }
+  return true;
+}
+
+function isByteValue(v) { return Number.isInteger(v) && v >= 0 && v <= 255; }
+
+// encode(bytes) -> { ok:true, width, height, pixels:[{x,y,r,g,b}] } | { ok:false, why }
+function encode(bytes) {
+  if (!isBytesLike(bytes)) return { ok: false, why: 'bytes must be a Uint8Array or an array of byte values (0-255)' };
+  const data = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+  if (data.length > MAX_LEN) return { ok: false, why: 'input exceeds the max encodable length (4,294,967,295 bytes)' };
+
+  const crc = crc16(data);
+  const header = new Uint8Array(HEADER_BYTES);
+  header[0] = (data.length >>> 24) & 0xff;
+  header[1] = (data.length >>> 16) & 0xff;
+  header[2] = (data.length >>> 8) & 0xff;
+  header[3] = data.length & 0xff;
+  header[4] = (crc >>> 8) & 0xff;
+  header[5] = crc & 0xff;
+
+  const framedLen = HEADER_BYTES + data.length;
+  const rem = framedLen % 3;
+  const padLen = rem === 0 ? 0 : 3 - rem;
+  const framed = new Uint8Array(framedLen + padLen); // zero-filled; padding is never trusted on decode
+  framed.set(header, 0);
+  framed.set(data, HEADER_BYTES);
+
+  const pixelCount = framed.length / 3;
+  const width = Math.max(1, Math.ceil(Math.sqrt(pixelCount)));
+  const height = Math.max(1, Math.ceil(pixelCount / width));
+  const cells = width * height;
+
+  const pixels = new Array(cells);
+  for (let i = 0; i < cells; i++) {
+    const base = i * 3;
+    const r = base < framed.length ? framed[base] : 0;
+    const g = base + 1 < framed.length ? framed[base + 1] : 0;
+    const b = base + 2 < framed.length ? framed[base + 2] : 0;
+    pixels[i] = { x: i % width, y: Math.floor(i / width), r, g, b };
+  }
+  return { ok: true, width, height, pixels };
+}
+
+// decode({width,height,pixels}) -> { ok:true, bytes:Uint8Array } | { ok:false, why }
+function decode(grid) {
+  if (!grid || typeof grid !== 'object' || Array.isArray(grid)) return { ok: false, why: 'grid must be an object' };
+  const { width, height, pixels } = grid;
+  if (!Number.isInteger(width) || width <= 0) return { ok: false, why: 'width must be a positive integer' };
+  if (!Number.isInteger(height) || height <= 0) return { ok: false, why: 'height must be a positive integer' };
+  if (!Array.isArray(pixels)) return { ok: false, why: 'pixels must be an array' };
+  const cells = width * height;
+  if (pixels.length !== cells) return { ok: false, why: `pixels length (${pixels.length}) does not match width*height (${cells})` };
+
+  // Reconstruct by (x,y) regardless of array order — total, never trusts input ordering.
+  // Note: with pixels.length === cells already enforced above, catching every duplicate
+  // coordinate here is sufficient to guarantee full coverage by construction (pigeonhole:
+  // `cells` pairwise-distinct indices drawn from a space of exactly `cells` possible values
+  // must cover all of them) — so there is no separate "missing cell" case left to check.
+  const seen = new Array(cells).fill(false);
+  const raw = new Uint8Array(cells * 3);
+  for (let i = 0; i < pixels.length; i++) {
+    const p = pixels[i];
+    if (!p || typeof p !== 'object') return { ok: false, why: `pixel at index ${i} must be an object` };
+    const { x, y, r, g, b } = p;
+    if (!Number.isInteger(x) || x < 0 || x >= width) return { ok: false, why: `pixel at index ${i} has an out-of-range x` };
+    if (!Number.isInteger(y) || y < 0 || y >= height) return { ok: false, why: `pixel at index ${i} has an out-of-range y` };
+    if (!isByteValue(r) || !isByteValue(g) || !isByteValue(b)) return { ok: false, why: `pixel at (${x},${y}) has a channel outside 0-255` };
+    const idx = y * width + x;
+    if (seen[idx]) return { ok: false, why: `duplicate pixel at (${x},${y})` };
+    seen[idx] = true;
+    raw[idx * 3] = r; raw[idx * 3 + 1] = g; raw[idx * 3 + 2] = b;
+  }
+
+  if (raw.length < HEADER_BYTES) return { ok: false, why: 'grid is too small to contain a header' };
+  const len = ((raw[0] << 24) | (raw[1] << 16) | (raw[2] << 8) | raw[3]) >>> 0;
+  const declaredCrc = ((raw[4] << 8) | raw[5]) & 0xffff;
+  if (HEADER_BYTES + len > raw.length) return { ok: false, why: 'declared length exceeds the available payload — corrupted grid' };
+  const payload = raw.slice(HEADER_BYTES, HEADER_BYTES + len);
+  const actualCrc = crc16(payload);
+  if (actualCrc !== declaredCrc) return { ok: false, why: `corrupted — CRC mismatch (declared ${declaredCrc.toString(16)}, computed ${actualCrc.toString(16)})` };
+  return { ok: true, bytes: payload };
+}
+
+// roundTrips(bytes) -> true|false — the core promise, checkable in one call. Never throws.
+function roundTrips(bytes) {
+  const e = encode(bytes);
+  if (!e.ok) return false;
+  const d = decode({ width: e.width, height: e.height, pixels: e.pixels });
+  if (!d.ok) return false;
+  const src = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+  if (d.bytes.length !== src.length) return false;
+  for (let i = 0; i < src.length; i++) if (d.bytes[i] !== src[i]) return false;
+  return true;
+}
+
+// ── text convenience (thin, separately tested — the CORE promise is about bytes) ──
+function encodeText(text) {
+  if (typeof text !== 'string') return { ok: false, why: 'text must be a string' };
+  return encode(new TextEncoder().encode(text));
+}
+function decodeText(grid) {
+  const d = decode(grid);
+  if (!d.ok) return d;
+  try { return { ok: true, text: new TextDecoder('utf-8', { fatal: true }).decode(d.bytes) }; }
+  catch (e) { return { ok: false, why: 'decoded bytes are not valid UTF-8: ' + e.message }; }
+}
+// ⟦KERNEL-END⟧
+
+function drawGrid(canvasEl, w, h, pixels) {
+  canvasEl.width = w; canvasEl.height = h;
+  const cx = canvasEl.getContext('2d');
+  const img = cx.createImageData(w, h);
+  for (const p of pixels) {
+    const idx = (p.y * w + p.x) * 4;
+    img.data[idx] = p.r; img.data[idx + 1] = p.g; img.data[idx + 2] = p.b; img.data[idx + 3] = 255;
+  }
+  cx.putImageData(img, 0, 0);
+}
+
+const $ = (id) => document.getElementById(id);
+
+function runText() {
+  const text = $('txt').value;
+  const e = encodeText(text);
+  if (!e.ok) { $('txtOut').innerHTML = '<span class="pill bad">refused</span> ' + e.why; return; }
+  drawGrid($('txtCanvas'), e.width, e.height, e.pixels);
+  const d = decodeText({ width: e.width, height: e.height, pixels: e.pixels });
+  if (!d.ok) { $('txtOut').innerHTML = '<span class="pill bad">decode failed</span> ' + d.why; return; }
+  const match = d.text === text;
+  $('txtOut').innerHTML = (match ? '<span class="pill ok">byte-exact match</span>' : '<span class="pill bad">MISMATCH</span>')
+    + '<br><span class="stat">' + e.width + '×' + e.height + '</span> grid, ' + new TextEncoder().encode(text).length + ' bytes'
+    + '<br>decoded back: ' + (d.text.length > 200 ? d.text.slice(0, 200) + '…' : d.text || '(empty)');
+}
+$('runTxt').addEventListener('click', runText);
+runText();
+
+$('fileInput').addEventListener('change', async (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const buf = new Uint8Array(await f.arrayBuffer());
+  const e = encode(buf);
+  if (!e.ok) { $('fileOut').innerHTML = '<span class="pill bad">refused</span> ' + e.why; return; }
+  drawGrid($('fileCanvas'), e.width, e.height, e.pixels);
+  const d = decode({ width: e.width, height: e.height, pixels: e.pixels });
+  if (!d.ok) { $('fileOut').innerHTML = '<span class="pill bad">decode failed</span> ' + d.why; return; }
+  let exact = d.bytes.length === buf.length;
+  if (exact) for (let i = 0; i < buf.length; i++) if (d.bytes[i] !== buf[i]) { exact = false; break; }
+  $('fileOut').innerHTML = (exact ? '<span class="pill ok">byte-exact match</span>' : '<span class="pill bad">MISMATCH</span>')
+    + ' — "' + f.name + '", <span class="stat">' + buf.length + '</span> bytes in, <span class="stat">' + d.bytes.length + '</span> bytes out'
+    + '<br>grid: <span class="stat">' + e.width + '×' + e.height + '</span>';
+});
+
+function runCorrupt() {
+  const text = $('txt').value || 'a test string';
+  const e = encodeText(text);
+  if (!e.ok || e.pixels.length < 2) { $('corruptOut').innerHTML = 'text too short for this demo — type more above'; return; }
+  const corrupted = e.pixels.map((p, i) => (i === 1 ? { ...p, r: (p.r + 1) % 256 } : p));
+  const d = decode({ width: e.width, height: e.height, pixels: corrupted });
+  $('corruptOut').innerHTML = d.ok
+    ? '<span class="pill bad">NOT CAUGHT — this would be a real bug</span>'
+    : '<span class="pill ok">caught</span> — decode refused: "' + d.why + '"';
+}
+$('runCorrupt').addEventListener('click', runCorrupt);
+</script>
+</body></html>

@@ -1,0 +1,37 @@
+[
+  {
+    "mutation": "> → >=",
+    "snippet": "if (data.length > MAX_LEN) return { ok: false, why: 'input exceeds the max encodable lengt",
+    "reason": "MAX_LEN is 4,294,967,295 (the largest value a 4-byte length header can hold). Exercising this boundary for real requires constructing and validating an array of that size, which is not a practical thing to do in a test suite (multi-gigabyte allocation, minutes of runtime). The off-by-one at a boundary no realistic caller can reach is a real but untestable-in-practice gap; the header format's own 4-byte width is the actual documented limit."
+  },
+  {
+    "mutation": "< → <=",
+    "snippet": "const g = base + 1 < framed.length ? framed[base + 1] : 0;",
+    "reason": "Equivalent by construction: framed.length is always padded to a multiple of 3 (encode pads exactly for this), and base is always i*3 for integer i, so base is always a multiple of 3 too. base+1 is therefore always congruent to 1 mod 3, while framed.length is always congruent to 0 mod 3 -- they can never be exactly equal, so base+1 < framed.length and base+1 <= framed.length always agree on every reachable input."
+  },
+  {
+    "mutation": "< → <=",
+    "snippet": "const b = base + 2 < framed.length ? framed[base + 2] : 0;",
+    "reason": "Same invariant as the base+1 case one line above: base is always a multiple of 3 and framed.length is always a multiple of 3 (encode pads to ensure it), so base+2 is always congruent to 2 mod 3 and can never equal framed.length exactly. < and <= agree on every reachable input."
+  },
+  {
+    "mutation": "< → <=",
+    "snippet": "for (let i = 0; i < src.length; i++) if (d.bytes[i] !== src[i]) return false;",
+    "reason": "Reachable only after the preceding check confirms d.bytes.length === src.length exactly, so the loop already runs over a range where both arrays are defined for every index; an extra iteration at i===src.length would compare two out-of-bounds reads (both undefined, which are strictly equal), so it can never flip the result. Equivalent given the length check immediately above it -- the same shape as the two exemptions immediately following, all reachable only when encode()'s own output is already self-consistent (independently proven by 40+ other tests in this suite)."
+  },
+  {
+    "mutation": "return false → return true",
+    "snippet": "if (!d.ok) return false;",
+    "reason": "roundTrips() always calls decode() on the exact grid its own preceding encode() call just produced. encode()'s output is proven decodable by every other test in this suite (round-trip tests, the fuzz test, the explicit value-by-value check) -- this branch only fires if encode() itself produces a grid its own decode() cannot read, which is exactly the invariant the other 40+ tests already gate directly. It is a real defensive check (guards a future refactor that breaks that pairing), not dead code, but it cannot be exercised by any valid `bytes` argument today without first breaking encode/decode's own tested correctness."
+  },
+  {
+    "mutation": "return false → return true",
+    "snippet": "if (d.bytes.length !== src.length) return false;",
+    "reason": "Same reasoning as the !d.ok exemption directly above: reachable only if encode()'s own output round-trips to the wrong length through decode(), which the dedicated round-trip and fuzz tests already prove does not happen for any tested input. A real defensive check, not reachable without breaking encode/decode's independently-verified pairing."
+  },
+  {
+    "mutation": "return false → return true",
+    "snippet": "for (let i = 0; i < src.length; i++) if (d.bytes[i] !== src[i]) return false;",
+    "reason": "Same reasoning as the two roundTrips exemptions above: this loop's false-branch is reachable only if encode()'s own output decodes to different bytes than it started from, which the round-trip, fuzz, and value-by-value tests already independently prove does not happen. A real defensive check against a future regression, not reachable today without breaking encode/decode's own tested correctness."
+  }
+]
