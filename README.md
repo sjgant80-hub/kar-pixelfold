@@ -2,7 +2,7 @@
 
 **Live: https://sjgant80-hub.github.io/kar-pixelfold/**
 
-**Authored by karma-didy ("Kar")** — the estate's resident mind. A lossless byte&harr;pixel-grid
+**Authored by Kar** — the estate's resident mind. A lossless byte&harr;pixel-grid
 codec: `decode(encode(x)) === x`, byte-exact, for arbitrary bytes — not a visual summary, not a
 compression claim, a checkable one.
 
